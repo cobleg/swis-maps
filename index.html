@@ -306,18 +306,21 @@ const CATEGORIES = {
   other:      { label: "Other",       icon: "📍", order: 5 },
 };
 
+// Lower number = higher priority (battery beats generator when both types present)
+const CAT_PRIORITY = { battery: 1, substation: 2, load: 3, generator: 4, other: 5 };
+
 function categorise(typeQid, typeLabel) {
-  const qid   = (typeQid   || "").split("/").pop();  // strip URI if present
+  const qid   = (typeQid   || "").split("/").pop();
   const label = (typeLabel || "").toLowerCase();
 
-  if (GENERATOR_QIDS.has(qid))  return "generator";
   if (BATTERY_QIDS.has(qid))    return "battery";
   if (SUBSTATION_QIDS.has(qid)) return "substation";
+  if (GENERATOR_QIDS.has(qid))  return "generator";
 
-  if (GENERATOR_KW.some(k  => label.includes(k))) return "generator";
   if (BATTERY_KW.some(k    => label.includes(k))) return "battery";
   if (SUBSTATION_KW.some(k => label.includes(k))) return "substation";
   if (LOAD_KW.some(k       => label.includes(k))) return "load";
+  if (GENERATOR_KW.some(k  => label.includes(k))) return "generator";
 
   return "other";
 }
@@ -416,9 +419,9 @@ function buildMarkers(bindings) {
     if (seen.has(uri)) {
       const e = seen.get(uri);
       if (typeLabel && !e.typeLabel.includes(typeLabel)) e.typeLabel += `, ${typeLabel}`;
-      // Refine category: if a more specific type appears, upgrade
+      // Upgrade to higher-priority category if this type is more specific
       const cat = categorise(typeQid, typeLabel);
-      if (cat !== "other" && e.catKey === "other") e.catKey = cat;
+      if (CAT_PRIORITY[cat] < CAT_PRIORITY[e.catKey]) e.catKey = cat;
       continue;
     }
 
