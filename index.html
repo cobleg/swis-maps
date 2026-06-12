@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SWIS Infrastructure Map</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Leaflet.markercluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    header {
+      flex: 0 0 auto;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f8fafc;
+      white-space: nowrap;
+    }
+    header h1 span { color: #38bdf8; }
+
+    /* divider between filter rows */
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .filter-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      white-space: nowrap;
+      min-width: 56px;
+    }
+
+    /* ── Chips ───────────────────────────────────────────────── */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 11px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: opacity 0.15s, border-color 0.15s;
+      user-select: none;
+      background: #0f172a;
+      color: #e2e8f0;
+      white-space: nowrap;
+    }
+    .chip .dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .chip.active  { border-color: currentColor; }
+    .chip.inactive { opacity: 0.3; }
+
+    /* Category chips use icon accent colour */
+    .cat-chip { color: #94a3b8; }
+    .cat-chip.active { border-color: #38bdf8; color: #38bdf8; }
+    .cat-chip.inactive { opacity: 0.3; }
+
+    /* ── Status / search row ─────────────────────────────────── */
+    #search-wrap { position: relative; margin-left: auto; }
+    #search {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      padding: 3px 28px 3px 9px;
+      font-size: 0.78rem;
+      width: 160px;
+      outline: none;
+    }
+    #search::placeholder { color: #475569; }
+    #search:focus { border-color: #38bdf8; }
+    #clear-search {
+      position: absolute;
+      right: 6px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none;
+      color: #64748b; cursor: pointer;
+      font-size: 1rem; line-height: 1;
+      display: none;
+    }
+
+    #status {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+
+    /* ── Map ─────────────────────────────────────────────────── */
+    #map-wrap {
+      position: relative;
+      flex: 1 1 0;
+      min-height: 0;
+    }
+    #map { width: 100%; height: 100%; }
+
+    /* ── Popup ───────────────────────────────────────────────── */
+    .popup-inner { min-width: 190px; }
+    .popup-inner h3 { font-size: 0.92rem; font-weight: 700; margin-bottom: 4px; }
+    .popup-inner p  { font-size: 0.8rem; color: #475569; margin: 2px 0; }
+    .popup-inner .cat-badge {
+      display: inline-block;
+      font-size: 0.7rem; font-weight: 700;
+      padding: 1px 7px; border-radius: 999px;
+      background: #e2e8f0; color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .popup-inner a { font-size: 0.76rem; color: #2563eb; }
+
+    /* ── Leaflet overrides ───────────────────────────────────── */
+    .leaflet-container { background: #1e293b; }
+    .leaflet-popup-content-wrapper { border-radius: 10px; }
+    .leaflet-control-zoom a { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+    .leaflet-control-zoom a:hover { background: #334155; }
+
+    /* ── Legend ──────────────────────────────────────────────── */
+    #legend {
+      background: rgba(15,23,42,0.92);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.75rem;
+      line-height: 1.85;
+      color: #e2e8f0;
+      pointer-events: none;
+    }
+    #legend b { display: block; margin-bottom: 3px; font-size: 0.77rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+    .leg-row { display: flex; align-items: center; gap: 7px; }
+    .leg-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Loading overlay ─────────────────────────────────────── */
+    #overlay {
+      position: absolute; inset: 0;
+      background: rgba(15,23,42,0.78);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 14px; z-index: 9999; pointer-events: none;
+    }
+    #overlay.hidden { display: none; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid #334155;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #overlay p { font-size: 0.88rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+<header>
+  <!-- Row 1: title + status filters + search + count -->
+  <div class="header-top">
+    <h1>SWIS <span>Infrastructure</span> Map</h1>
+    <span class="filter-label">Status</span>
+    <div class="filter-row" id="status-filters"></div>
+    <div id="search-wrap">
+      <input id="search" type="text" placeholder="Search…" />
+      <button id="clear-search" title="Clear">×</button>
+    </div>
+    <span id="status">Loading…</span>
+  </div>
+
+  <!-- Row 2: component-type filters -->
+  <div class="filter-row">
+    <span class="filter-label">Show</span>
+    <div id="cat-filters"></div>
+  </div>
+</header>
+
+<div id="map-wrap">
+  <div id="map"></div>
+  <div id="overlay"><div class="spinner"></div><p>Fetching data from Wikidata…</p></div>
+</div>
+
+<script>
+// ── SPARQL ────────────────────────────────────────────────────────────────────
+
+const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
+
+// Return ?type QID as well so we can categorise client-side
+const SPARQL_QUERY = `
+SELECT DISTINCT ?component ?componentLabel ?coord ?type ?typeLabel ?stateLabel
+  (COALESCE(?rgb, "808080") AS ?rgb)
+WHERE {
+  ?component wdt:P361 wd:Q85802336;
+             wdt:P31  ?type;
+             wdt:P625 ?coord.
+
+  OPTIONAL { ?component wdt:P5817 ?state. }
+
+  OPTIONAL {
+    VALUES (?state ?rgb) {
+      (wd:Q55654238 "00AA00")
+      (wd:Q811683   "0000FF")
+      (wd:Q12377751 "FFA500")
+      (wd:Q11639308 "FF0000")
+    }
+  }
+
+  SERVICE wikibase:label {
+    bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en".
+  }
+}
+`;
+
+// ── Category definitions ──────────────────────────────────────────────────────
+
+// Wikidata QIDs that map to each category (extend as needed)
+const GENERATOR_QIDS = new Set([
+  "Q159719",   // power station (generic)
+  "Q44011",    // wind farm
+  "Q3023758",  // solar park
+  "Q1068942",  // solar power station
+  "Q1107052",  // gas-fired power station
+  "Q15911027", // thermal power station
+  "Q15911028", // combined cycle power plant
+  "Q1134252",  // hydroelectric power station
+  "Q1568897",  // pumped-storage hydroelectric
+  "Q217128",   // nuclear power plant
+  "Q484170",   // combined heat and power
+  "Q1539532",  // wind power plant
+  "Q2670846",  // gas turbine power station
+  "Q1513063",  // peaking power station
+  "Q1080794",  // coal-fired power station
+  "Q1529911",  // biomass power station
+  "Q630010",   // diesel power station
+  "Q1153954",  // reciprocating engine power station
+]);
+
+const BATTERY_QIDS = new Set([
+  "Q17089583", // battery energy storage system
+  "Q5618999",  // flywheel energy storage
+  "Q1387599",  // compressed air energy storage
+  "Q1479939",  // pumped-storage power station (alt)
+  "Q1362271",  // energy storage power station
+  "Q105999699",// grid-scale battery
+]);
+
+const SUBSTATION_QIDS = new Set([
+  "Q179023",   // electrical substation
+  "Q1121659",  // switching station
+  "Q1378286",  // converter station
+  "Q1811518",  // transformer station
+]);
+
+// Keywords applied to typeLabel when no QID matches (lowercase)
+const GENERATOR_KW = ["power station","wind farm","solar farm","solar park","turbine","power plant","power-station","generating station","photovoltaic","peaking"];
+const BATTERY_KW   = ["battery","bess","energy storage","flywheel"];
+const SUBSTATION_KW= ["substation","switching station","converter station","transformer station"];
+const LOAD_KW      = ["mine","refinery","smelter","desalination","industrial","factory","alumina","nickel","gold","iron","port","load"];
+
+const CATEGORIES = {
+  generator:  { label: "Generators",  icon: "⚡", order: 1 },
+  battery:    { label: "Batteries",   icon: "🔋", order: 2 },
+  substation: { label: "Substations", icon: "🔌", order: 3 },
+  load:       { label: "Loads",       icon: "🏭", order: 4 },
+  other:      { label: "Other",       icon: "📍", order: 5 },
+};
+
+function categorise(typeQid, typeLabel) {
+  const qid   = (typeQid   || "").split("/").pop();  // strip URI if present
+  const label = (typeLabel || "").toLowerCase();
+
+  if (GENERATOR_QIDS.has(qid))  return "generator";
+  if (BATTERY_QIDS.has(qid))    return "battery";
+  if (SUBSTATION_QIDS.has(qid)) return "substation";
+
+  if (GENERATOR_KW.some(k  => label.includes(k))) return "generator";
+  if (BATTERY_KW.some(k    => label.includes(k))) return "battery";
+  if (SUBSTATION_KW.some(k => label.includes(k))) return "substation";
+  if (LOAD_KW.some(k       => label.includes(k))) return "load";
+
+  return "other";
+}
+
+// ── Status colours ────────────────────────────────────────────────────────────
+
+const STATE_META = {
+  "00AA00": { label: "In service",        order: 1 },
+  "FFA500": { label: "Under construction", order: 2 },
+  "0000FF": { label: "Proposed",          order: 3 },
+  "FF0000": { label: "Decommissioned",    order: 4 },
+  "808080": { label: "Unknown",           order: 5 },
+};
+
+// ── Leaflet init ──────────────────────────────────────────────────────────────
+
+const map = L.map("map", { zoomControl: true }).setView([-31.4, 118.0], 7);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+// Legend
+const legend = L.control({ position: "bottomright" });
+legend.onAdd = () => {
+  const div = L.DomUtil.create("div", "");
+  div.id = "legend";
+  div.innerHTML = `<b>Operational status</b>` +
+    Object.entries(STATE_META)
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([rgb, { label }]) =>
+        `<div class="leg-row"><div class="leg-dot" style="background:#${rgb}"></div>${label}</div>`
+      ).join("") +
+    `<b style="margin-top:8px">Component type</b>` +
+    Object.entries(CATEGORIES)
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([, { label, icon }]) =>
+        `<div class="leg-row">${icon} ${label}</div>`
+      ).join("");
+  return div;
+};
+legend.addTo(map);
+
+const cluster = L.markerClusterGroup({ maxClusterRadius: 40 });
+map.addLayer(cluster);
+
+// ── Filter state ──────────────────────────────────────────────────────────────
+
+let allMarkers      = [];
+let activeStatuses  = new Set(Object.keys(STATE_META));
+let activeCategories= new Set(Object.keys(CATEGORIES));
+
+// ── Marker helpers ────────────────────────────────────────────────────────────
+
+function parsePoint(wkt) {
+  const m = wkt.match(/Point\(([^\s]+)\s+([^\)]+)\)/i);
+  return m ? { lat: parseFloat(m[2]), lng: parseFloat(m[1]) } : null;
+}
+
+function makeMarker(latlng, rgb, label, typeLabel, catKey, stateLabel, uri) {
+  const color   = `#${rgb}`;
+  const catMeta = CATEGORIES[catKey];
+  const marker  = L.circleMarker(latlng, {
+    radius: 7, fillColor: color,
+    color: "#fff", weight: 1.5, fillOpacity: 0.9,
+  });
+
+  marker.bindPopup(`
+    <div class="popup-inner">
+      <span class="cat-badge">${catMeta.icon} ${catMeta.label}</span>
+      <h3>${label}</h3>
+      <p><b>Type:</b> ${typeLabel || "—"}</p>
+      <p><b>Status:</b> <span style="color:${color};font-weight:600">${stateLabel || "Unknown"}</span></p>
+      ${uri ? `<a href="${uri}" target="_blank" rel="noopener">View on Wikidata ↗</a>` : ""}
+    </div>
+  `);
+
+  return marker;
+}
+
+// ── Build markers from SPARQL results ─────────────────────────────────────────
+
+function buildMarkers(bindings) {
+  const seen = new Map();
+
+  for (const row of bindings) {
+    const uri        = row.component?.value  ?? "";
+    const label      = row.componentLabel?.value ?? uri.split("/").pop();
+    const coord      = row.coord?.value      ?? "";
+    const rgb        = row.rgb?.value        ?? "808080";
+    const typeQid    = row.type?.value       ?? "";
+    const typeLabel  = row.typeLabel?.value  ?? "";
+    const stateLabel = row.stateLabel?.value ?? STATE_META[rgb]?.label ?? "Unknown";
+
+    if (seen.has(uri)) {
+      const e = seen.get(uri);
+      if (typeLabel && !e.typeLabel.includes(typeLabel)) e.typeLabel += `, ${typeLabel}`;
+      // Refine category: if a more specific type appears, upgrade
+      const cat = categorise(typeQid, typeLabel);
+      if (cat !== "other" && e.catKey === "other") e.catKey = cat;
+      continue;
+    }
+
+    const latlng = parsePoint(coord);
+    if (!latlng) continue;
+
+    seen.set(uri, {
+      uri, label, typeLabel, stateLabel, rgb, latlng,
+      catKey: categorise(typeQid, typeLabel),
+    });
+  }
+
+  allMarkers = [];
+  for (const { uri, label, typeLabel, stateLabel, rgb, latlng, catKey } of seen.values()) {
+    const marker = makeMarker(latlng, rgb, label, typeLabel, catKey, stateLabel, uri);
+    allMarkers.push({ marker, rgb, catKey, searchLabel: label.toLowerCase() });
+  }
+
+  applyFilters();
+}
+
+// ── Apply both status + category filters ──────────────────────────────────────
+
+function applyFilters() {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  cluster.clearLayers();
+  let count = 0;
+
+  for (const { marker, rgb, catKey, searchLabel } of allMarkers) {
+    if (!activeStatuses.has(rgb))     continue;
+    if (!activeCategories.has(catKey)) continue;
+    if (q && !searchLabel.includes(q)) continue;
+    cluster.addLayer(marker);
+    count++;
+  }
+
+  document.getElementById("status").textContent =
+    `${count.toLocaleString()} of ${allMarkers.length.toLocaleString()} facilities`;
+}
+
+// ── Build status filter chips ─────────────────────────────────────────────────
+
+function buildStatusChips() {
+  const container = document.getElementById("status-filters");
+  const sorted    = Object.entries(STATE_META).sort((a, b) => a[1].order - b[1].order);
+
+  for (const [rgb, { label }] of sorted) {
+    const btn = document.createElement("button");
+    btn.className    = "chip active";
+    btn.style.color  = `#${rgb}`;
+    btn.dataset.rgb  = rgb;
+    btn.innerHTML    = `<span class="dot" style="background:#${rgb}"></span>${label}`;
+
+    btn.addEventListener("click", () => {
+      if (activeStatuses.has(rgb)) {
+        if (activeStatuses.size === 1) return;
+        activeStatuses.delete(rgb);
+        btn.className = "chip inactive";
+      } else {
+        activeStatuses.add(rgb);
+        btn.className = "chip active";
+        btn.style.color = `#${rgb}`;
+      }
+      applyFilters();
+    });
+    container.appendChild(btn);
+  }
+
+  // All / None
+  const toggle = document.createElement("button");
+  toggle.className   = "chip";
+  toggle.style.color = "#94a3b8";
+  toggle.textContent = "All / None";
+  toggle.addEventListener("click", () => {
+    const allOn = activeStatuses.size === Object.keys(STATE_META).length;
+    activeStatuses = allOn
+      ? new Set(["00AA00"])
+      : new Set(Object.keys(STATE_META));
+    container.querySelectorAll(".chip[data-rgb]").forEach(c => {
+      c.className = activeStatuses.has(c.dataset.rgb) ? "chip active" : "chip inactive";
+      if (activeStatuses.has(c.dataset.rgb)) c.style.color = `#${c.dataset.rgb}`;
+    });
+    applyFilters();
+  });
+  container.appendChild(toggle);
+}
+
+// ── Build category filter buttons ─────────────────────────────────────────────
+
+function buildCatChips() {
+  const container = document.getElementById("cat-filters");
+  container.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
+
+  const sorted = Object.entries(CATEGORIES).sort((a, b) => a[1].order - b[1].order);
+
+  for (const [key, { label, icon }] of sorted) {
+    const btn = document.createElement("button");
+    btn.className    = "chip cat-chip active";
+    btn.dataset.cat  = key;
+    btn.textContent  = `${icon} ${label}`;
+
+    btn.addEventListener("click", () => {
+      if (activeCategories.has(key)) {
+        if (activeCategories.size === 1) return;
+        activeCategories.delete(key);
+        btn.className = "chip cat-chip inactive";
+      } else {
+        activeCategories.add(key);
+        btn.className = "chip cat-chip active";
+      }
+      applyFilters();
+    });
+    container.appendChild(btn);
+  }
+
+  // All / None for categories
+  const toggle = document.createElement("button");
+  toggle.className   = "chip cat-chip";
+  toggle.style.color = "#94a3b8";
+  toggle.textContent = "All / None";
+  toggle.addEventListener("click", () => {
+    const allOn = activeCategories.size === Object.keys(CATEGORIES).length;
+    activeCategories = allOn
+      ? new Set(["generator"])
+      : new Set(Object.keys(CATEGORIES));
+    container.querySelectorAll(".chip[data-cat]").forEach(c => {
+      c.className = activeCategories.has(c.dataset.cat) ? "chip cat-chip active" : "chip cat-chip inactive";
+    });
+    applyFilters();
+  });
+  container.appendChild(toggle);
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+const searchInput = document.getElementById("search");
+const clearBtn    = document.getElementById("clear-search");
+
+searchInput.addEventListener("input", () => {
+  clearBtn.style.display = searchInput.value ? "block" : "none";
+  applyFilters();
+});
+clearBtn.addEventListener("click", () => {
+  searchInput.value = "";
+  clearBtn.style.display = "none";
+  applyFilters();
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+(async () => {
+  buildStatusChips();
+  buildCatChips();
+
+  try {
+    const url  = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(SPARQL_QUERY)}&format=json`;
+    const res  = await fetch(url, { headers: { Accept: "application/sparql-results+json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    buildMarkers(data.results.bindings);
+  } catch (err) {
+    document.getElementById("status").textContent = `Error: ${err.message}`;
+    document.querySelector("#overlay p").textContent = `Failed to load: ${err.message}`;
+    setTimeout(() => document.getElementById("overlay").classList.add("hidden"), 5000);
+    console.error(err);
+    return;
+  }
+
+  document.getElementById("overlay").classList.add("hidden");
+})();
+</script>
+</body>
+</html>
